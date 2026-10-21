@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>聊天室管理后台</title>
+<style>
+  :root{--bg:#0f1419;--panel:#161d26;--panel2:#1c2531;--line:#2a3444;
+    --txt:#e6ebf2;--sub:#8a97a8;--accent:#4f9cff;--ok:#3fb950;--warn:#f85149;}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--txt);min-height:100vh;padding:16px;}
+  .wrap{max-width:720px;margin:0 auto;}
+  h1{font-size:20px;margin-bottom:4px;}
+  .sub{color:var(--sub);font-size:13px;margin-bottom:16px;}
+  .login{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px;max-width:360px;margin:60px auto;}
+  .login input{width:100%;padding:12px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;color:var(--txt);font-size:15px;margin-bottom:12px;}
+  .login button{width:100%;padding:12px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:600;}
+  .stats{display:flex;gap:10px;margin-bottom:16px;}
+  .stat{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center;}
+  .stat .n{font-size:24px;font-weight:700;}
+  .stat .l{font-size:12px;color:var(--sub);margin-top:4px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:16px;}
+  .card h2{font-size:15px;padding:14px;border-bottom:1px solid var(--line);}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);}
+  th{color:var(--sub);font-size:12px;font-weight:600;}
+  td.online{color:var(--ok);} td.offline{color:var(--sub);}
+  .mini{padding:5px 11px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);
+    border-radius:8px;font-size:12px;cursor:pointer;margin-right:6px;}
+  .mini.danger{border-color:rgba(248,81,73,.3);color:var(--warn);}
+  .mini:active{opacity:.7;}
+  .hidden{display:none!important;}
+  .empty{color:var(--sub);font-size:13px;padding:20px;text-align:center;}
+  .logout{background:none;border:none;color:var(--sub);font-size:13px;cursor:pointer;text-decoration:underline;}
+  .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="login-box" class="login">
+    <h1>管理后台</h1>
+    <p class="sub" style="margin-bottom:18px;">仅管理员可访问</p>
+    <input id="adm-user" placeholder="管理员账号" value="admin">
+    <input id="adm-pass" type="password" placeholder="密码" value="admin123">
+    <button id="adm-go">登录</button>
+    <p class="sub" style="margin-top:14px;text-align:center;">默认 admin / admin123, 请登录后尽快修改密码</p>
+  </div>
+
+  <div id="admin-box" class="hidden">
+    <div class="head">
+      <h1>🛡️ 聊天室管理后台</h1>
+      <button class="logout" id="adm-out">退出</button>
+    </div>
+    <p class="sub">可查看所有用户、在线状态, 并封禁/解封账号</p>
+    <div class="stats">
+      <div class="stat"><div class="n" id="st-users">-</div><div class="l">注册用户</div></div>
+      <div class="stat"><div class="n" id="st-online">-</div><div class="l">在线</div></div>
+      <div class="stat"><div class="n" id="st-banned">-</div><div class="l">已封禁</div></div>
+    </div>
+    <div class="card">
+      <h2>用户列表</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>用户</th><th>昵称</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="user-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+var admUser = "";
+function $(s){return document.querySelector(s);}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function post(path, data, cb){
+  fetch(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)})
+    .then(function(r){return r.json();}).then(cb).catch(function(){cb({ok:false,msg:"网络错误"});});
+}
+$("#adm-go").onclick = function(){
+  var u = $("#adm-user").value, p = $("#adm-pass").value;
+  post("/api/login", {username:u, password:p}, function(j){
+    if(j.ok && j.user && j.user.is_admin){ admUser = u; $("#login-box").classList.add("hidden");
+      $("#admin-box").classList.remove("hidden"); load(); }
+    else if(j.ok){ alert("该账号不是管理员"); }
+    else { alert(j.msg); }
+  });
+};
+$("#adm-out").onclick = function(){ location.reload(); };
+function load(){
+  fetch("/api/admin/users?user=" + encodeURIComponent(admUser)).then(function(r){return r.json();}).then(function(j){
+    if(!j.ok){ alert(j.msg); return; }
+    var users = j.users, online = j.online;
+    var onSet = {}; online.forEach(function(o){onSet[o.username]=true;});
+    $("#st-users").textContent = users.length;
+    $("#st-online").textContent = online.length;
+    $("#st-banned").textContent = users.filter(function(u){return u.banned;}).length;
+    var tb = $("#user-tbody"); tb.innerHTML = "";
+    users.forEach(function(u){
+      var on = !!onSet[u.username];
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td>@" + esc(u.username) + (u.is_admin?' <small style="color:var(--accent)">[管理]</small>':"") + "</td>" +
+        "<td>" + esc(u.nickname) + "</td>" +
+        '<td class="' + (on?"online":"offline") + '">' + (on?"🟢 在线":"⚪ 离线") + "</td>" +
+        "<td>" + (u.is_admin? "<span style=\"color:var(--sub);font-size:12px\">—</span>"
+          : '<button class="mini ' + (u.banned?"":"danger") + '" data-u="' + esc(u.username) + '" data-ban="' + !u.banned + '">'
+            + (u.banned?"解封":"封禁") + "</button>") + "</td>";
+      tb.appendChild(tr);
+    });
+  });
+}
+document.addEventListener("click", function(e){
+  var b = e.target;
+  if(b.classList && b.classList.contains("mini") && b.dataset.u){
+    var ban = b.dataset.ban === "true";
+    post("/api/admin/ban", {user:admUser, target:b.dataset.u, ban:ban}, function(j){
+      if(j.ok){ load(); } else { alert(j.msg); }
+    });
+  }
+});
+setInterval(function(){ if(!$("#admin-box").classList.contains("hidden")) load(); }, 5000);
+</script>
+</body>
+</html>

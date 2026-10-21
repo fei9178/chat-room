@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Termux 聊天室</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#161d26; --panel2:#1c2531; --line:#2a3444;
+    --txt:#e6ebf2; --sub:#8a97a8; --accent:#4f9cff; --accent2:#7b5cf0;
+    --me:#2b5fb8; --pm:#c084fc; --ok:#3fb950; --warn:#f85149;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--txt); overflow:hidden;
+  }
+  button,input{font-family:inherit;}
+  .hidden{display:none!important;}
+
+  /* ===== 登录 ===== */
+  #screen-login{height:100%;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .auth{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);
+    border-radius:20px;padding:26px 22px;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+  .logo{text-align:center;margin-bottom:20px;}
+  .logo h1{font-size:26px;background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  .logo p{color:var(--sub);font-size:13px;margin-top:6px;}
+  .tabs{display:flex;gap:6px;background:var(--panel2);padding:4px;border-radius:12px;margin-bottom:16px;}
+  .tabs button{flex:1;border:none;background:none;color:var(--sub);padding:9px;border-radius:9px;
+    font-size:14px;cursor:pointer;transition:.15s;}
+  .tabs button.on{background:var(--accent);color:#fff;}
+  .auth input{width:100%;padding:12px 14px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:12px;color:var(--txt);font-size:15px;margin-bottom:10px;}
+  .auth input:focus{outline:none;border-color:var(--accent);}
+  .auth .submit{width:100%;padding:12px;border:none;border-radius:12px;font-size:15px;font-weight:600;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));color:#fff;cursor:pointer;margin-top:4px;}
+  .auth .submit:active{transform:scale(.98);}
+  .msg-line{text-align:center;font-size:13px;min-height:18px;margin-top:10px;}
+  .msg-line.err{color:var(--warn);}
+  .msg-line.ok{color:var(--ok);}
+  .hint{font-size:12px;color:var(--sub);text-align:center;margin-top:16px;line-height:1.6;}
+  .hint code{background:var(--panel2);padding:2px 6px;border-radius:5px;color:var(--accent);}
+
+  /* ===== 聊天主界面 ===== */
+  #screen-chat{height:100%;display:flex;flex-direction:column;}
+  header{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel);
+    border-bottom:1px solid var(--line);}
+  header .back{flex:1;min-width:0;}
+  header .title{font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  header .sub{font-size:12px;color:var(--sub);}
+  .icon-btn{border:none;background:var(--panel2);color:var(--txt);width:38px;height:38px;
+    border-radius:10px;cursor:pointer;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+  .icon-btn:active{background:var(--line);}
+  .badge{position:relative;}
+  .badge i{position:absolute;top:-2px;right:-2px;width:8px;height:8px;background:var(--warn);
+    border-radius:50%;display:none;}
+  .badge.on i{display:block;}
+
+  /* 房间标签 */
+  #room-tabs{display:flex;gap:8px;padding:10px 12px;overflow-x:auto;background:var(--panel);
+    border-bottom:1px solid var(--line);scrollbar-width:none;}
+  #room-tabs::-webkit-scrollbar{display:none;}
+  .room-tab{flex-shrink:0;padding:7px 14px;border-radius:20px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--sub);font-size:13px;cursor:pointer;white-space:nowrap;}
+  .room-tab.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+  /* 消息区 */
+  #messages{flex:1;overflow-y:auto;padding:14px 12px;scroll-behavior:smooth;}
+  .msg{display:flex;margin-bottom:12px;gap:8px;align-items:flex-end;}
+  .msg.me{flex-direction:row-reverse;}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent2);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;}
+  .bubble{max-width:72%;padding:9px 13px;border-radius:14px;font-size:15px;line-height:1.5;
+    word-break:break-word;background:var(--panel2);}
+  .msg.me .bubble{background:var(--me);}
+  .msg.pm .bubble{border:1px solid var(--pm);}
+  .msg .who{font-size:11px;color:var(--sub);margin-bottom:3px;}
+  .msg .time{font-size:10px;color:var(--sub);opacity:.7;margin:0 4px;}
+  .sys{text-align:center;color:var(--sub);font-size:12px;margin:8px 0;}
+
+  /* 输入区 */
+  #composer{display:flex;gap:8px;padding:10px 12px;background:var(--panel);
+    border-top:1px solid var(--line);align-items:center;}
+  #input{flex:1;padding:11px 14px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:22px;color:var(--txt);font-size:15px;}
+  #input:focus{outline:none;border-color:var(--accent);}
+  #send{border:none;background:var(--accent);color:#fff;width:44px;height:44px;border-radius:50%;
+    cursor:pointer;font-size:18px;flex-shrink:0;}
+  #send:active{transform:scale(.92);}
+
+  /* ===== 侧边抽屉 ===== */
+  .drawer{position:fixed;inset:0;z-index:50;display:none;}
+  .drawer.on{display:block;}
+  .mask{position:absolute;inset:0;background:rgba(0,0,0,.5);}
+  .panel{position:absolute;right:0;top:0;bottom:0;width:82%;max-width:320px;background:var(--panel);
+    display:flex;flex-direction:column;animation:slide .2s ease;}
+  @keyframes slide{from{transform:translateX(100%);}to{transform:translateX(0);}}
+  .panel-h{display:flex;align-items:center;justify-content:space-between;padding:14px;
+    border-bottom:1px solid var(--line);}
+  .panel-h h3{font-size:16px;}
+  .panel-h button{border:none;background:none;color:var(--sub);font-size:22px;cursor:pointer;}
+  .panel-b{flex:1;overflow-y:auto;padding:8px;}
+  .panel-f{padding:12px;border-top:1px solid var(--line);}
+
+  .user-item{display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;cursor:pointer;}
+  .user-item:active{background:var(--panel2);}
+  .user-item .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex-shrink:0;}
+  .user-item .dot.off{background:var(--line);}
+  .user-item .uname{min-width:0;flex:1;}
+  .user-item .un{flex:1;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .user-item .nk{font-size:11px;color:var(--sub);}
+  .user-item .tag{font-size:10px;padding:2px 6px;border-radius:6px;background:var(--panel2);color:var(--sub);}
+  .user-item .tag.admin{color:var(--accent);}
+  .user-item .tag.banned{color:var(--warn);}
+  .sec-title{font-size:12px;color:var(--sub);padding:12px 8px 4px;font-weight:600;}
+
+  .room-add{display:flex;gap:8px;margin-top:8px;}
+  .room-add input{flex:1;padding:9px 12px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;color:var(--txt);font-size:14px;}
+  .room-add button{padding:9px 14px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;}
+
+  .btn-block{width:100%;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);
+    color:var(--txt);font-size:14px;cursor:pointer;margin-bottom:8px;text-align:left;}
+  .btn-block:active{background:var(--line);}
+  .btn-block.danger{color:var(--warn);border-color:rgba(248,81,73,.3);}
+  .nick-edit{display:flex;gap:8px;}
+  .nick-edit input{flex:1;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;color:var(--txt);font-size:14px;}
+  .nick-edit button{padding:10px 16px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;}
+  .me-card{display:flex;align-items:center;gap:12px;padding:6px 0 14px;}
+  .me-card .avatar{width:46px;height:46px;font-size:16px;}
+  .me-card .info .n{font-weight:600;}
+  .me-card .info .u{font-size:12px;color:var(--sub);}
+  .logout{width:100%;padding:11px;border-radius:12px;border:1px solid var(--line);background:transparent;
+    color:var(--warn);font-size:14px;cursor:pointer;margin-top:10px;}
+</style>
+</head>
+<body>
+
+<!-- 登录/注册 -->
+<div id="screen-login">
+  <div class="auth">
+    <div class="logo">
+      <h1>💬 Termux 聊天室</h1>
+      <p>局域网内多人在线群聊 & 私聊</p>
+    </div>
+    <div class="tabs">
+      <button id="tab-login" class="on">登录</button>
+      <button id="tab-register">注册</button>
+    </div>
+    <div id="view-login">
+      <input id="login-user" placeholder="账号" autocomplete="off" autocapitalize="off">
+      <input id="login-pass" type="password" placeholder="密码">
+      <button class="submit" id="btn-login">进入聊天室</button>
+    </div>
+    <div id="view-register" class="hidden">
+      <input id="reg-user" placeholder="账号 (3-20位字母数字下划线)" autocomplete="off" autocapitalize="off">
+      <input id="reg-nick" placeholder="昵称 (可选)" autocomplete="off">
+      <input id="reg-pass" type="password" placeholder="密码 (至少4位)">
+      <button class="submit" id="btn-register">注册并登录</button>
+    </div>
+    <div class="msg-line" id="auth-msg"></div>
+    <p class="hint">后端运行在 Termux 上, 仅标准库, 无需 pip 安装<br>
+       手机 / 电脑连同一 WiFi 即可访问 <code id="hint-ip">同一局域网</code></p>
+  </div>
+</div>
+
+<!-- 聊天 -->
+<div id="screen-chat" class="hidden">
+  <header>
+    <div class="back">
+      <div class="title" id="cur-title">公共大厅</div>
+      <div class="sub" id="cur-sub">群聊</div>
+    </div>
+    <button class="icon-btn badge" id="btn-users" title="在线用户">👥<i></i></button>
+    <button class="icon-btn" id="btn-menu" title="菜单">☰</button>
+  </header>
+  <div id="room-tabs"></div>
+  <div id="messages"></div>
+  <div id="composer">
+    <input id="input" placeholder="说点什么…" autocomplete="off">
+    <button id="send">➤</button>
+  </div>
+</div>
+
+<!-- 用户/房间抽屉 -->
+<div class="drawer" id="drawer-users">
+  <div class="mask" data-close="drawer-users"></div>
+  <div class="panel">
+    <div class="panel-h"><h3>在线用户</h3><button data-close="drawer-users">✕</button></div>
+    <div class="panel-b" id="user-list"></div>
+  </div>
+</div>
+
+<!-- 菜单抽屉 -->
+<div class="drawer" id="drawer-menu">
+  <div class="mask" data-close="drawer-menu"></div>
+  <div class="panel">
+    <div class="panel-h"><h3>菜单</h3><button data-close="drawer-menu">✕</button></div>
+    <div class="panel-b">
+      <div class="me-card">
+        <div class="avatar" id="me-avatar">?</div>
+        <div class="info">
+          <div class="n" id="me-nick"></div>
+          <div class="u" id="me-user"></div>
+        </div>
+      </div>
+      <div class="sec-title">个人</div>
+      <div class="nick-edit">
+        <input id="nick-input" placeholder="新昵称">
+        <button id="btn-nick">保存</button>
+      </div>
+      <div class="sec-title">房间</div>
+      <div id="menu-rooms"></div>
+      <div class="room-add">
+        <input id="new-room" placeholder="新建房间 (管理员)">
+        <button id="btn-new-room">+</button>
+      </div>
+      <div class="sec-title">后台管理</div>
+      <button class="btn-block" id="btn-admin">👑 用户管理后台</button>
+    </div>
+    <div class="panel-f">
+      <button class="logout" id="btn-logout">退出登录</button>
+    </div>
+  </div>
+</div>
+
+<!-- 私聊浮窗 -->
+<div class="drawer" id="drawer-pm">
+  <div class="mask" data-close="drawer-pm"></div>
+  <div class="panel">
+    <div class="panel-h"><h3 id="pm-title">私聊</h3><button data-close="drawer-pm">✕</button></div>
+    <div class="panel-b" id="pm-messages"></div>
+    <div class="panel-f" style="display:flex;gap:8px;">
+      <input id="pm-input" placeholder="发私信…" autocomplete="off"
+             style="flex:1;padding:10px 14px;background:var(--panel2);border:1px solid var(--line);border-radius:22px;color:var(--txt);font-size:14px;">
+      <button id="pm-send" style="border:none;background:var(--accent);color:#fff;width:42px;height:42px;border-radius:50%;cursor:pointer;">➤</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
